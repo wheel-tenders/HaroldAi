@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Dih</title>
+    <link rel="stylesheet" href="{{ asset_url('styles.css') }}">
+</head>
+<body id="Bg">
+  <div class="layout sidebar-closed" id="layout">
+    <aside class="sidebar" id="sidebar">
+      <img class="sidebar-logo" src="{{ asset_url('logo.png') }}" alt="Logo">
+      <ul class="sidebar-links">
+        <li><a href="{{ url_for('home') }}"><span class="subject-icon"><img src="{{ asset_url('mathicon.png') }}"></span><span class="subject-label">Math</span></a></li>
+        <li><a href="{{ url_for('science_page') }}"><span class="subject-icon"><img src="{{ asset_url('science-icon-21.png') }}"></span><span class="subject-label">Science</span></a></li>
+        <li><a href="{{ url_for('history_page') }}"><span class="subject-icon"><img src="{{ asset_url('Historyicon.png') }}"></span><span class="subject-label">History</span></a></li>
+        <li><a href="{{ url_for('english_page') }}"><span class="subject-icon"><img src="{{ asset_url('englishicon.png') }}"></span><span class="subject-label">English</span></a></li>
+      </ul>
+    </aside>
+
+    <main class="app">
+      <button type="button" id="sidebarToggle" class="sidebar-toggle" aria-expanded="false" aria-controls="sidebar" aria-label="Expand sidebar">▶</button>
+      <label for="themeSelect" class="theme-picker-label">Theme</label>
+      <select id="themeSelect" class="theme-picker" aria-label="Choose color theme">
+        <option value="ocean">Ocean</option>
+        <option value="sunset">Sunset</option>
+        <option value="forest">Forest</option>
+        <option value="mono">Mono</option>
+      </select>
+      <div id="chatbox" class="chatbox">
+        <div class="chatbox-header">Science only. Ask science-related questions.</div>
+      </div>
+      <div class="input-area">
+          <button type="button" id="imageBtn">
+              <img src="{{ asset_url('16057.png') }}" alt="Upload" style="height: 20px; width: 20px;">
+          </button>
+          <input type="text" id="userInput" placeholder="Ask a science question..." />
+          <input type="file" id="imageInput" accept="image/*" hidden />
+          <button type="button" id="sendBtn">Send</button>
+      </div>
+    </main>
+
+    <div class="chatstyles"></div>
+  </div>
+
+  <script src="{{ asset_url('script.js') }}"></script>
+</body>
+</html>
