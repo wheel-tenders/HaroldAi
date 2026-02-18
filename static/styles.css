@@ -73,6 +73,7 @@ body[data-theme="sunset"] {
   --ai-msg-b: rgba(73, 38, 60, 0.95);
   --button-bg-a: rgba(155, 67, 89, 0.92);
   --button-bg-b: rgba(120, 52, 70, 0.95);
+  --sidebar-logo: rgba(120, 52, 70, 0.95);
 }
 
 body[data-theme="forest"] {
@@ -210,8 +211,8 @@ body::after {
   margin: 6px auto 34px;
   padding: 10px;
   border-radius: 14px;
-  background: linear-gradient(160deg, rgba(84, 173, 208, 0.2), rgba(95, 225, 192, 0.14));
-  border: 1px solid rgba(155, 228, 211, 0.25);
+  background: linear-gradient(160deg, rgba(84, 173, 208, 0.1), rgba(95, 225, 192, 0.1));
+  border: 1px solid rgba(255, 255, 255, 0.25);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
   transition: width 0.25s ease, margin 0.25s ease;
 }

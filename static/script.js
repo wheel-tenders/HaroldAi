@@ -1,5 +1,70 @@
 let isSending = false;
 
+function formatMathSymbols(text) {
+    if (!text) return text;
+
+    let formatted = text;
+
+    // Convert common LaTeX wrappers and commands to plain-symbol math.
+    formatted = formatted
+        .replace(/\\\[((?:.|\n)*?)\\\]/g, "$1")
+        .replace(/\\\(((?:.|\n)*?)\\\)/g, "$1")
+        .replace(/\$\$((?:.|\n)*?)\$\$/g, "$1")
+        .replace(/\$([^$\n]+)\$/g, "$1")
+        .replace(/\\\\/g, "\n")
+        .replace(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, "$1/$2")
+        .replace(/\\sqrt\s*\{([^{}]+)\}/g, "√$1")
+        .replace(/\\times/g, "×")
+        .replace(/\\cdot/g, "·")
+        .replace(/\\div/g, "÷")
+        .replace(/\\leq/g, "≤")
+        .replace(/\\geq/g, "≥")
+        .replace(/\\neq/g, "≠")
+        .replace(/\\approx/g, "≈")
+        .replace(/\\pm/g, "±")
+        .replace(/\\infty/g, "∞")
+        .replace(/\\pi/g, "π")
+        .replace(/\\theta/g, "θ")
+        .replace(/\\delta/g, "∆")
+        .replace(/\\sum/g, "∑")
+        .replace(/\\int/g, "∫")
+        .replace(/\\partial/g, "∂")
+        .replace(/\\\{/g, "{")
+        .replace(/\\\}/g, "}")
+        .replace(/\\,/g, " ")
+        .replace(/\\;/g, " ")
+        .replace(/\\:/g, " ")
+        .replace(/\\!/g, "");
+
+    const replacements = [
+        [/\bpi\b/gi, "π"],
+        [/\btheta\b/gi, "θ"],
+        [/\bdelta\b/gi, "∆"],
+        [/\binfty\b/gi, "∞"],
+        [/\binfinity\b/gi, "∞"],
+        [/\bsum\b/gi, "∑"],
+        [/\bintegral\b/gi, "∫"],
+        [/\bpartial\b/gi, "∂"],
+        [/\bdeg\b/gi, "°"],
+        [/!=/g, "≠"],
+        [/>=/g, "≥"],
+        [/<=/g, "≤"],
+        [/\+\/-/g, "±"],
+        [/\bsqrt\s*\(/gi, "√("],
+    ];
+
+    replacements.forEach(([pattern, symbol]) => {
+        formatted = formatted.replace(pattern, symbol);
+    });
+
+    // Normalize common ASCII operators when used between numbers/variables.
+    formatted = formatted
+        .replace(/([0-9A-Za-z)\]])\s*\*\s*([0-9A-Za-z([])/g, "$1 × $2")
+        .replace(/([0-9A-Za-z)\]])\s*\/\s*([0-9A-Za-z([])/g, "$1 ÷ $2");
+
+    return formatted;
+}
+
 function send() {
     const input = document.getElementById("userInput");
     const fileInput = document.getElementById("imageInput");
@@ -44,7 +109,7 @@ function send() {
     task
         .then((data) => {
             removeMessage(thinkingBubble);
-            appendTextMessage(chatbox, "ai", `Harold: ${data.reply}`, { animate: true });
+            appendTextMessage(chatbox, "ai", formatMathSymbols(`Harold: ${data.reply}`), { animate: true });
         })
         .catch(() => {
             removeMessage(thinkingBubble);

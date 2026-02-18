@@ -68,7 +68,7 @@ HISTORY_KEYWORDS = {
 ENGLISH_KEYWORDS = {
     "english", "grammar", "essay", "paragraph", "sentence", "verb", "noun", "adjective",
     "adverb", "punctuation", "thesis", "literature", "poem", "poetry", "novel", "author",
-    "reading", "comprehension", "vocabulary", "synonym", "antonym"
+    "reading", "comprehension", "vocabulary", "synonym", "antonym", "book"
 }
 
 
