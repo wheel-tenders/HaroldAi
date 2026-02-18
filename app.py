@@ -1,6 +1,7 @@
 import os
 import base64
 import json
+from typing import Optional, Tuple, Dict
 from urllib.parse import urlparse
 from flask import Flask, render_template, request, jsonify, url_for
 from openai import OpenAI
@@ -70,6 +71,15 @@ ENGLISH_KEYWORDS = {
     "adverb", "punctuation", "thesis", "literature", "poem", "poetry", "novel", "author",
     "reading", "comprehension", "vocabulary", "synonym", "antonym", "book"
 }
+
+STEP_BY_STEP_HINTS = (
+    "step by step",
+    "step-by-step",
+    "show steps",
+    "with steps",
+    "walk me through",
+    "solve this",
+)
 
 
 def static_version(filename: str) -> int:
@@ -168,6 +178,97 @@ def get_chat_history(client_id: str, subject: str):
     return user_sessions.setdefault(subject, [])
 
 
+def wants_step_by_step(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(hint in lowered for hint in STEP_BY_STEP_HINTS)
+
+
+def extract_model_text(content) -> str:
+    if isinstance(content, list):
+        return " ".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+        ).strip()
+    return (content or "").strip()
+
+
+def get_math_plan(prompt_text: str, image_data_url: Optional[str] = None) -> Dict:
+    planning_prompt = (
+        "Solve only if this is a math homework problem.\n"
+        "Return valid JSON with this exact schema:\n"
+        "{"
+        "\"is_math\": boolean, "
+        "\"steps\": [\"short step 1\", \"short step 2\"], "
+        "\"final_answer\": \"text\", "
+        "\"message\": \"used when is_math is false\""
+        "}\n"
+        "Rules:\n"
+        "- If not math, set is_math false and provide message asking for a math problem.\n"
+        "- If math, set is_math true, provide concise steps in order, and final_answer.\n"
+        "- Keep each step short and actionable."
+    )
+
+    user_content = [
+        {"type": "text", "text": planning_prompt},
+        {"type": "text", "text": f"User prompt: {prompt_text}" if prompt_text else "User prompt: (none)"},
+    ]
+    if image_data_url:
+        user_content.append({"type": "image_url", "image_url": {"url": image_data_url}})
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+        messages=[{
+            "role": "system",
+            "content": SUBJECT_SYSTEM_PROMPTS["math"]
+        }, {
+            "role": "user",
+            "content": user_content
+        }]
+    )
+
+    raw_json = extract_model_text(response.choices[0].message.content)
+    return json.loads(raw_json) if raw_json else {}
+
+
+def verify_step(expected_step: str, typed_work: str = "", image_data_url: Optional[str] = None) -> Tuple[bool, str]:
+    verify_prompt = (
+        "You are checking whether a student completed a math step.\n"
+        f"Expected step: {expected_step}\n"
+        f"Student typed work: {typed_work or '(none)'}\n\n"
+        "Return valid JSON only with this schema:\n"
+        "{"
+        "\"is_match\": boolean, "
+        "\"confidence\": number, "
+        "\"feedback\": \"one short sentence\""
+        "}\n"
+        "Rules:\n"
+        "- Be flexible: accept equivalent algebra/math forms and minor wording/format differences.\n"
+        "- If the student is mostly correct, set is_match true.\n"
+        "- Use confidence 0-100."
+    )
+
+    user_content = [{"type": "text", "text": verify_prompt}]
+    if image_data_url:
+        user_content.append({"type": "image_url", "image_url": {"url": image_data_url}})
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+        messages=[{
+            "role": "user",
+            "content": user_content
+        }]
+    )
+
+    raw_json = extract_model_text(response.choices[0].message.content)
+    payload = json.loads(raw_json) if raw_json else {}
+    is_match = bool(payload.get("is_match"))
+    confidence = int(payload.get("confidence", 0) or 0)
+    feedback = str(payload.get("feedback", "")).strip()
+    return is_match or confidence >= 60, feedback
+
+
 @app.after_request
 def add_no_cache_headers(response):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -193,12 +294,67 @@ def chat():
     session = image_sessions.get(client_id)
     history = get_chat_history(client_id, subject)
     if subject == "math" and session:
+        step_index = session["step_index"]
+        expected_step = session["steps"][step_index]
+        passed, feedback = verify_step(expected_step, typed_work=user_message)
+        if not passed:
+            return jsonify({
+                "reply": (
+                    f"You're close, but I can't verify step {step_index + 1} yet.\n"
+                    f"Expected idea: {expected_step}\n"
+                    f"{feedback or 'Try restating your work a little more clearly, or upload a photo.'}"
+                )
+            })
+
+        next_index = step_index + 1
+        if next_index >= len(session["steps"]):
+            final_answer = session.get("final_answer", "").strip()
+            image_sessions.pop(client_id, None)
+            if final_answer:
+                return jsonify({
+                    "reply": (
+                        "Nice work. All steps are verified.\n"
+                        f"Final answer: {final_answer}"
+                    )
+                })
+            return jsonify({"reply": "Nice work. All steps are verified."})
+
+        session["step_index"] = next_index
         return jsonify({
             "reply": (
-                "Please upload a photo of your written work for the current step so I can verify it "
-                "before giving the next step."
+                f"Step {step_index + 1} verified. {feedback or 'Good work.'}\n"
+                f"Step {next_index + 1}: {session['steps'][next_index]}\n"
+                "You can type your work or upload a photo for this step."
             )
         })
+
+    if subject == "math" and wants_step_by_step(user_message):
+        try:
+            payload = get_math_plan(user_message)
+            if not payload.get("is_math"):
+                return jsonify({"reply": payload.get("message", "Please send a math problem.")})
+
+            steps = payload.get("steps") or []
+            if not isinstance(steps, list):
+                steps = []
+            steps = [str(step).strip() for step in steps if str(step).strip()]
+            if not steps:
+                return jsonify({"reply": "I couldn't build clear steps from that. Try typing the math problem more clearly."})
+
+            image_sessions[client_id] = {
+                "steps": steps,
+                "step_index": 0,
+                "final_answer": str(payload.get("final_answer", "")).strip(),
+            }
+            return jsonify({
+                "reply": (
+                    f"Step 1: {steps[0]}\n"
+                    "Send your work for this step by typing it or uploading a photo."
+                )
+            })
+        except Exception as e:
+            print("STEP PLAN ERROR:", e)
+            return jsonify({"reply": "I couldn't start step-by-step mode right now. Please try again."})
 
     try:
         messages = [{"role": "system", "content": SUBJECT_SYSTEM_PROMPTS[subject]}]
@@ -235,7 +391,36 @@ def upload_image():
     subject = get_subject_from_request()
 
     if not file:
-        return jsonify({"reply": "No image uploaded."})
+        if subject != "math":
+            return jsonify({"reply": "No image uploaded."})
+        if not prompt:
+            return jsonify({"reply": "No image uploaded. You can also type a math problem and include 'step by step'."})
+        try:
+            payload = get_math_plan(prompt)
+            if not payload.get("is_math"):
+                return jsonify({"reply": payload.get("message", "Please send a math problem.")})
+
+            steps = payload.get("steps") or []
+            if not isinstance(steps, list):
+                steps = []
+            steps = [str(step).strip() for step in steps if str(step).strip()]
+            if not steps:
+                return jsonify({"reply": "I couldn't build clear steps from that. Try typing the math problem more clearly."})
+
+            image_sessions[client_id] = {
+                "steps": steps,
+                "step_index": 0,
+                "final_answer": str(payload.get("final_answer", "")).strip(),
+            }
+            return jsonify({
+                "reply": (
+                    f"Step 1: {steps[0]}\n"
+                    "Send your work for this step by typing it or uploading a photo."
+                )
+            })
+        except Exception as e:
+            print("TEXT PLAN ERROR:", e)
+            return jsonify({"reply": "I couldn't process that text problem right now. Please try again."})
 
     try:
         image_bytes = file.read()
@@ -277,38 +462,13 @@ def upload_image():
         if session:
             step_index = session["step_index"]
             expected_step = session["steps"][step_index]
-            verify_prompt = (
-                "You are checking whether a student completed a math step.\n"
-                f"Expected step: {expected_step}\n\n"
-                "Look at the uploaded image. Reply with exactly one word first: YES or NO.\n"
-                "Then add one short sentence of feedback."
-            )
-
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": verify_prompt},
-                        {"type": "image_url", "image_url": {"url": image_data_url}}
-                    ]
-                }]
-            )
-            content = response.choices[0].message.content
-            if isinstance(content, list):
-                verdict_text = " ".join(
-                    part.get("text", "") if isinstance(part, dict) else str(part)
-                    for part in content
-                ).strip()
-            else:
-                verdict_text = (content or "").strip()
-
-            normalized = verdict_text.upper()
-            if not normalized.startswith("YES"):
+            passed, feedback = verify_step(expected_step, typed_work=prompt_text, image_data_url=image_data_url)
+            if not passed:
                 return jsonify({
                     "reply": (
-                        "I can't confirm this step yet. Please rewrite this exact step clearly and upload another photo:\n"
-                        f"Step {step_index + 1}: {expected_step}"
+                        f"I can't verify step {step_index + 1} yet.\n"
+                        f"Expected idea: {expected_step}\n"
+                        f"{feedback or 'Please rewrite it a little more clearly and try again.'}"
                     )
                 })
 
@@ -328,53 +488,13 @@ def upload_image():
             session["step_index"] = next_index
             return jsonify({
                 "reply": (
-                    f"Nice work. Step {next_index} is verified.\n"
+                    f"Nice work. Step {step_index + 1} is verified. {feedback or ''}\n"
                     f"Step {next_index + 1}: {session['steps'][next_index]}\n"
-                    "Write this on your homework, then upload a new photo."
+                    "You can type your work or upload a new photo."
                 )
             })
 
-        planning_prompt = (
-            "Solve only if this is a math homework problem.\n"
-            "Return valid JSON with this exact schema:\n"
-            "{"
-            "\"is_math\": boolean, "
-            "\"steps\": [\"short step 1\", \"short step 2\"], "
-            "\"final_answer\": \"text\", "
-            "\"message\": \"used when is_math is false\""
-            "}\n"
-            "Rules:\n"
-            "- If not math, set is_math false and provide message asking for a math problem.\n"
-            "- If math, set is_math true, provide concise steps in order, and final_answer.\n"
-            "- Keep each step short and actionable."
-        )
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            response_format={"type": "json_object"},
-            messages=[{
-                "role": "system",
-                "content": SUBJECT_SYSTEM_PROMPTS["math"]
-            }, {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": planning_prompt},
-                    {"type": "text", "text": f"User prompt: {prompt_text}" if prompt_text else "User prompt: (none)"},
-                    {"type": "image_url", "image_url": {"url": image_data_url}}
-                ]
-            }]
-        )
-
-        content = response.choices[0].message.content
-        if isinstance(content, list):
-            raw_json = " ".join(
-                part.get("text", "") if isinstance(part, dict) else str(part)
-                for part in content
-            ).strip()
-        else:
-            raw_json = (content or "").strip()
-
-        payload = json.loads(raw_json) if raw_json else {}
+        payload = get_math_plan(prompt_text, image_data_url=image_data_url)
         if not payload.get("is_math"):
             return jsonify({"reply": payload.get("message", "Please upload a math homework problem.")})
 
@@ -394,7 +514,7 @@ def upload_image():
         return jsonify({
             "reply": (
                 f"Step 1: {steps[0]}\n"
-                "Write this on your homework, then upload a new photo so I can verify before step 2."
+                "Do this step, then send your work by typing it or uploading a photo."
             )
         })
 
