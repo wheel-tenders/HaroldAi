@@ -41,6 +41,10 @@ SUBJECT_SYSTEM_PROMPTS = {
 # In-memory flow state keyed by client IP for image-based step verification.
 image_sessions = {}
 
+# In-memory chat history keyed by client IP and subject.
+chat_sessions = {}
+MAX_HISTORY_MESSAGES = 12
+
 MATH_KEYWORDS = {
     "math", "algebra", "geometry", "trigonometry", "trig", "calculus", "derivative",
     "integral", "equation", "solve", "simplify", "factor", "fraction", "decimal",
@@ -159,6 +163,11 @@ def should_reject_for_subject(text: str, subject: str) -> bool:
     return best_subject != subject and best_score >= 2
 
 
+def get_chat_history(client_id: str, subject: str):
+    user_sessions = chat_sessions.setdefault(client_id, {})
+    return user_sessions.setdefault(subject, [])
+
+
 @app.after_request
 def add_no_cache_headers(response):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -182,6 +191,7 @@ def chat():
         return jsonify({"reply": f"I only answer {subject}-related questions on this page. Please ask a {subject} question."})
 
     session = image_sessions.get(client_id)
+    history = get_chat_history(client_id, subject)
     if subject == "math" and session:
         return jsonify({
             "reply": (
@@ -191,15 +201,22 @@ def chat():
         })
 
     try:
+        messages = [{"role": "system", "content": SUBJECT_SYSTEM_PROMPTS[subject]}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_message})
+
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": SUBJECT_SYSTEM_PROMPTS[subject]},
-                {"role": "user", "content": user_message}
-            ]
+            messages=messages
         )
 
-        ai_reply = response.choices[0].message.content
+        ai_reply = (response.choices[0].message.content or "").strip()
+
+        history.append({"role": "user", "content": user_message})
+        history.append({"role": "assistant", "content": ai_reply})
+        if len(history) > MAX_HISTORY_MESSAGES:
+            del history[:-MAX_HISTORY_MESSAGES]
+
         return jsonify({"reply": ai_reply})
 
     except Exception as e:

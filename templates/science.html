@@ -32,11 +32,36 @@
       </div>
       <div class="input-area">
           <button type="button" id="imageBtn">
-              <img src="{{ asset_url('16057.png') }}" alt="Upload" style="height: 20px; width: 20px;">
+              <img src="{{ asset_url('16057.png') }}" alt="Upload">
           </button>
+          <button type="button" id="voiceBtn"><img src="{{ asset_url('listen.png') }}" style="height: 20px; width: 20px;"></button>
           <input type="text" id="userInput" placeholder="Ask a science question..." />
           <input type="file" id="imageInput" accept="image/*" hidden />
           <button type="button" id="sendBtn">Send</button>
+      </div>
+      <div class="symbol-toolbar" aria-label="Math symbols">
+        <button type="button" class="math-symbol" data-symbol="+" data-tooltip="Plus">+</button>
+        <button type="button" class="math-symbol" data-symbol="-" data-tooltip="Minus">-</button>
+        <button type="button" class="math-symbol" data-symbol="×" data-tooltip="Multiply">×</button>
+        <button type="button" class="math-symbol" data-symbol="÷" data-tooltip="Divide">÷</button>
+        <button type="button" class="math-symbol" data-symbol="=" data-tooltip="Equals">=</button>
+        <button type="button" class="math-symbol" data-symbol="≠" data-tooltip="Not equal">≠</button>
+        <button type="button" class="math-symbol" data-symbol="≈" data-tooltip="Approximately">≈</button>
+        <button type="button" class="math-symbol" data-symbol="<" data-tooltip="Less than">&lt;</button>
+        <button type="button" class="math-symbol" data-symbol=">" data-tooltip="Greater than">&gt;</button>
+        <button type="button" class="math-symbol" data-symbol="≤" data-tooltip="Less or equal">≤</button>
+        <button type="button" class="math-symbol" data-symbol="≥" data-tooltip="Greater or equal">≥</button>
+        <button type="button" class="math-symbol" data-symbol="±" data-tooltip="Plus minus">±</button>
+        <button type="button" class="math-symbol" data-symbol="∞" data-tooltip="Infinity">∞</button>
+        <button type="button" class="math-symbol" data-symbol="π" data-tooltip="Pi">π</button>
+        <button type="button" class="math-symbol" data-symbol="√" data-tooltip="Square root">√</button>
+        <button type="button" class="math-symbol" data-symbol="∑" data-tooltip="Summation">∑</button>
+        <button type="button" class="math-symbol" data-symbol="∆" data-tooltip="Delta">∆</button>
+        <button type="button" class="math-symbol" data-symbol="θ" data-tooltip="Theta">θ</button>
+        <button type="button" class="math-symbol" data-symbol="∫" data-tooltip="Integral">∫</button>
+        <button type="button" class="math-symbol" data-symbol="∂" data-tooltip="Partial derivative">∂</button>
+        <button type="button" class="math-symbol" data-symbol="°" data-tooltip="Degree">°</button>
+        <button type="button" class="math-symbol" data-symbol="%" data-tooltip="Percent">%</button>
       </div>
     </main>
 

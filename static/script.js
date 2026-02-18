@@ -6,11 +6,16 @@ function send() {
     const chatbox = document.getElementById("chatbox");
     const sendBtn = document.getElementById("sendBtn");
     const imageBtn = document.getElementById("imageBtn");
+    const voiceBtn = document.getElementById("voiceBtn");
 
     const message = input.value.trim();
     const file = fileInput.files[0];
 
     if (isSending || (!message && !file)) return;
+
+    if (voiceBtn && voiceBtn.classList.contains("voice-active")) {
+        voiceBtn.click();
+    }
 
     if (message) {
         appendTextMessage(chatbox, "user", message);
@@ -31,6 +36,9 @@ function send() {
     input.disabled = true;
     sendBtn.disabled = true;
     imageBtn.disabled = true;
+    if (voiceBtn) {
+        voiceBtn.disabled = true;
+    }
     const thinkingBubble = appendThinkingMessage(chatbox);
 
     task
@@ -47,6 +55,9 @@ function send() {
             input.disabled = false;
             sendBtn.disabled = false;
             imageBtn.disabled = false;
+            if (voiceBtn) {
+                voiceBtn.disabled = false;
+            }
             input.focus();
         });
 
@@ -149,11 +160,22 @@ function setTheme(themeName) {
     localStorage.setItem("themeName", themeName);
 }
 
+function insertAtCursor(input, text) {
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    const nextValue = input.value.slice(0, start) + text + input.value.slice(end);
+    input.value = nextValue;
+    const nextCursor = start + text.length;
+    input.setSelectionRange(nextCursor, nextCursor);
+    input.focus();
+}
+
 document.addEventListener("DOMContentLoaded", function () {
 
     const input = document.getElementById("userInput");
     const sendBtn = document.getElementById("sendBtn");
     const imageBtn = document.getElementById("imageBtn");
+    const voiceBtn = document.getElementById("voiceBtn");
     const imageInput = document.getElementById("imageInput");
     const layout = document.getElementById("layout");
     const sidebarToggle = document.getElementById("sidebarToggle");
@@ -187,5 +209,64 @@ document.addEventListener("DOMContentLoaded", function () {
 
     imageBtn.addEventListener("click", function () {
         imageInput.click();
+    });
+
+    if (voiceBtn) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            voiceBtn.disabled = true;
+            voiceBtn.title = "Voice input is not supported in this browser.";
+        } else {
+            const recognition = new SpeechRecognition();
+            recognition.lang = navigator.language || "en-US";
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+            recognition.continuous = false;
+
+            function setVoiceState(isActive) {
+                voiceBtn.classList.toggle("voice-active", isActive);
+                voiceBtn.textContent = isActive ? "Stop" : "Voice";
+            }
+
+            recognition.onresult = function (event) {
+                let transcript = "";
+                for (let i = event.resultIndex; i < event.results.length; i += 1) {
+                    transcript += event.results[i][0].transcript || "";
+                }
+                transcript = transcript.trim();
+                if (!transcript) return;
+
+                const needsSpace = input.value && !input.value.endsWith(" ");
+                input.value = `${input.value}${needsSpace ? " " : ""}${transcript}`;
+                input.focus();
+            };
+
+            recognition.onend = function () {
+                setVoiceState(false);
+            };
+
+            recognition.onerror = function () {
+                setVoiceState(false);
+            };
+
+            voiceBtn.addEventListener("click", function () {
+                if (isSending) return;
+                const isActive = voiceBtn.classList.contains("voice-active");
+                if (isActive) {
+                    recognition.stop();
+                    return;
+                }
+                setVoiceState(true);
+                recognition.start();
+            });
+        }
+    }
+
+    document.querySelectorAll(".math-symbol").forEach(function (button) {
+        button.addEventListener("click", function () {
+            const symbol = button.getAttribute("data-symbol") || "";
+            if (!symbol) return;
+            insertAtCursor(input, symbol);
+        });
     });
 });

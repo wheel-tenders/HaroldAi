@@ -349,6 +349,70 @@ body::after {
   left: calc(var(--sidebar-width-closed) - 14px);
 }
 
+.symbol-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 6px 12px;
+  margin-bottom: 6px;
+}
+
+.symbol-toolbar::-webkit-scrollbar {
+  height: 8px;
+}
+
+.symbol-toolbar::-webkit-scrollbar-thumb {
+  background: rgba(139, 193, 219, 0.4);
+  border-radius: 999px;
+}
+
+.math-symbol {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid rgba(138, 199, 227, 0.35);
+  border-radius: 10px;
+  background: linear-gradient(145deg, var(--button-bg-a), var(--button-bg-b));
+  color: var(--text-main);
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.2s ease;
+}
+
+.math-symbol:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.math-symbol::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text-main);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+  z-index: 4;
+}
+
+.math-symbol:hover::after,
+.math-symbol:focus-visible::after {
+  opacity: 1;
+}
+
 .chatbox {
   flex: 1;
   overflow-y: auto;
@@ -440,7 +504,7 @@ body::after {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
-  width: min(100%, 640px);
+  width: min(100%, 720px);
   backdrop-filter: blur(8px);
 }
 
@@ -462,7 +526,8 @@ body::after {
 }
 
 #sendBtn,
-#imageBtn {
+#imageBtn,
+#voiceBtn {
   margin-left: 6px;
   border: 1px solid rgba(138, 199, 227, 0.35);
   border-radius: 11px;
@@ -475,17 +540,31 @@ body::after {
   transition: transform 0.15s ease, filter 0.2s ease;
 }
 
+#imageBtn img {
+  width: 24px;
+  height: 24px;
+  display: block;
+  object-fit: contain;
+}
+
 #sendBtn:hover,
-#imageBtn:hover {
+#imageBtn:hover,
+#voiceBtn:hover {
   transform: translateY(-1px);
   filter: brightness(1.08);
 }
 
 #sendBtn:disabled,
-#imageBtn:disabled {
+#imageBtn:disabled,
+#voiceBtn:disabled {
   cursor: not-allowed;
   opacity: 0.68;
   transform: none;
+}
+
+#voiceBtn.voice-active {
+  border-color: rgba(255, 130, 130, 0.72);
+  filter: brightness(1.12);
 }
 
 .message img {
