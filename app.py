@@ -1,16 +1,23 @@
 import os
 import base64
 import json
+from functools import wraps
 from typing import Optional, Tuple, Dict
 from urllib.parse import urlparse
-from flask import Flask, render_template, request, jsonify, url_for
+from urllib import request as urllib_request
+from urllib import error as urllib_error
+from flask import Flask, render_template, request, jsonify, url_for, session, redirect
 from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", os.getenv("SECRET_KEY", "dev-change-me"))
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "AIzaSyBVn9jn7bHOo39SD-7j9u9FltAVluiHAE4")
 
 # Ensure template/static changes appear immediately during local development.
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -192,6 +199,53 @@ def extract_model_text(content) -> str:
     return (content or "").strip()
 
 
+def login_required(api: bool = False):
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped(*args, **kwargs):
+            if session.get("user_email"):
+                return view_func(*args, **kwargs)
+            if api:
+                return jsonify({
+                    "reply": "Please log in to use the chatbot.",
+                    "redirect": url_for("login_page")
+                }), 401
+            return redirect(url_for("login_page"))
+        return wrapped
+    return decorator
+
+
+def verify_firebase_id_token(id_token: str) -> Optional[Dict[str, str]]:
+    if not id_token or not FIREBASE_WEB_API_KEY:
+        return None
+
+    verify_url = f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={FIREBASE_WEB_API_KEY}"
+    body = json.dumps({"idToken": id_token}).encode("utf-8")
+    req = urllib_request.Request(
+        verify_url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib_error.URLError, urllib_error.HTTPError, json.JSONDecodeError):
+        return None
+
+    users = payload.get("users") or []
+    if not users:
+        return None
+
+    user = users[0]
+    uid = str(user.get("localId", "")).strip()
+    email = str(user.get("email", "")).strip().lower()
+    if not uid or not email:
+        return None
+    return {"uid": uid, "email": email}
+
+
 def get_math_plan(prompt_text: str, image_data_url: Optional[str] = None) -> Dict:
     planning_prompt = (
         "Solve only if this is a math homework problem.\n"
@@ -280,6 +334,7 @@ def add_no_cache_headers(response):
 # TEXT CHAT ROUTE
 # =========================
 @app.route("/chat", methods=["POST"])
+@login_required(api=True)
 def chat():
     payload = request.get_json(silent=True) or {}
     user_message = payload.get("message", "").strip()
@@ -384,6 +439,7 @@ def chat():
 # IMAGE ROUTE
 # =========================
 @app.route("/upload-image", methods=["POST"])
+@login_required(api=True)
 def upload_image():
     file = request.files.get("image")
     prompt = request.form.get("prompt", "").strip()
@@ -523,27 +579,54 @@ def upload_image():
         if app.debug:
             return jsonify({"reply": f"Image processing failed: {str(e)}"})
         return jsonify({"reply": "Something went wrong processing the image."})
+    
+@app.route("/login")
+def login_page():
+    return render_template("login.html")
+
+
+@app.route("/auth/session", methods=["POST"])
+def create_session():
+    payload = request.get_json(silent=True) or {}
+    id_token = str(payload.get("idToken", "")).strip()
+    verified_user = verify_firebase_id_token(id_token)
+    if not verified_user:
+        return jsonify({"ok": False, "error": "Invalid auth token."}), 401
+
+    session["user_email"] = verified_user["email"]
+    session["user_uid"] = verified_user["uid"]
+    return jsonify({"ok": True})
+
+
+@app.route("/auth/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"ok": True})
 
 
 # =========================
 # HOME
 # =========================
 @app.route("/")
+@login_required()
 def home():
     return render_template("chat.html")
 
 
 @app.route("/science")
+@login_required()
 def science_page():
     return render_template("science.html")
 
 
 @app.route("/history")
+@login_required()
 def history_page():
     return render_template("history.html")
 
 
 @app.route("/english")
+@login_required()
 def english_page():
     return render_template("english.html")
 

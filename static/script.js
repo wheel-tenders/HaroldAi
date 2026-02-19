@@ -205,7 +205,18 @@ function sendImage(file, prompt) {
     }).then(handleJsonResponse);
 }
 
-function handleJsonResponse(res) {
+async function handleJsonResponse(res) {
+    if (res.status === 401) {
+        let payload = {};
+        try {
+            payload = await res.json();
+        } catch (err) {
+            payload = {};
+        }
+        window.location.href = payload.redirect || "/login";
+        throw new Error("Unauthorized");
+    }
+
     if (!res.ok) {
         throw new Error(`Request failed with status ${res.status}`);
     }
@@ -245,6 +256,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const layout = document.getElementById("layout");
     const sidebarToggle = document.getElementById("sidebarToggle");
     const themeSelect = document.getElementById("themeSelect");
+    const logoutBtn = document.getElementById("logoutBtn");
 
     const savedSidebarState = localStorage.getItem("sidebarOpen") === "true";
     setSidebarState(layout, sidebarToggle, savedSidebarState);
@@ -262,6 +274,18 @@ document.addEventListener("DOMContentLoaded", function () {
         const isOpen = sidebarToggle.getAttribute("aria-expanded") === "true";
         setSidebarState(layout, sidebarToggle, !isOpen);
     });
+
+    if (logoutBtn) {
+        logoutBtn.addEventListener("click", async function () {
+            try {
+                await fetch("/auth/logout", { method: "POST" });
+            } catch (err) {
+                // Redirect regardless so user is returned to login even if request fails.
+            } finally {
+                window.location.href = "/login";
+            }
+        });
+    }
 
     sendBtn.addEventListener("click", send);
 
