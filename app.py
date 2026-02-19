@@ -2,6 +2,7 @@ import os
 import base64
 import json
 from functools import wraps
+from datetime import date
 from typing import Optional, Tuple, Dict
 from urllib.parse import urlparse
 from urllib import request as urllib_request
@@ -52,6 +53,10 @@ image_sessions = {}
 # In-memory chat history keyed by client IP and subject.
 chat_sessions = {}
 MAX_HISTORY_MESSAGES = 12
+DAILY_USE_LIMIT = int(os.getenv("DAILY_USE_LIMIT", "20"))
+
+# In-memory daily usage counters keyed by user uid/email and date (YYYY-MM-DD).
+daily_usage_counters = {}
 
 MATH_KEYWORDS = {
     "math", "algebra", "geometry", "trigonometry", "trig", "calculus", "derivative",
@@ -183,6 +188,66 @@ def should_reject_for_subject(text: str, subject: str) -> bool:
 def get_chat_history(client_id: str, subject: str):
     user_sessions = chat_sessions.setdefault(client_id, {})
     return user_sessions.setdefault(subject, [])
+
+
+def get_usage_user_key() -> str:
+    return (
+        str(session.get("user_uid") or "").strip()
+        or str(session.get("user_email") or "").strip().lower()
+        or str(request.remote_addr or "default").strip()
+    )
+
+
+def consume_daily_usage(user_key: str) -> Tuple[bool, int]:
+    if DAILY_USE_LIMIT <= 0:
+        return True, -1
+
+    today_key = date.today().isoformat()
+    user_counts = daily_usage_counters.setdefault(user_key, {})
+
+    # Keep only the current day to avoid unbounded in-memory growth.
+    if list(user_counts.keys()) != [today_key]:
+        user_counts.clear()
+
+    used_today = int(user_counts.get(today_key, 0) or 0)
+    if used_today >= DAILY_USE_LIMIT:
+        return False, 0
+
+    used_today += 1
+    user_counts[today_key] = used_today
+    return True, DAILY_USE_LIMIT - used_today
+
+
+def get_daily_usage_status(user_key: str) -> Dict[str, int]:
+    if DAILY_USE_LIMIT <= 0:
+        return {
+            "limit": DAILY_USE_LIMIT,
+            "used": 0,
+            "remaining": -1,
+            "unlimited": True,
+        }
+
+    today_key = date.today().isoformat()
+    user_counts = daily_usage_counters.setdefault(user_key, {})
+
+    # Keep only the current day to avoid unbounded in-memory growth.
+    if list(user_counts.keys()) != [today_key]:
+        user_counts.clear()
+
+    used_today = int(user_counts.get(today_key, 0) or 0)
+    remaining = max(DAILY_USE_LIMIT - used_today, 0)
+    return {
+        "limit": DAILY_USE_LIMIT,
+        "used": used_today,
+        "remaining": remaining,
+        "unlimited": False,
+    }
+
+
+def daily_limit_reached_response():
+    return jsonify({
+        "reply": f"You have reached your daily limit of {DAILY_USE_LIMIT} requests. Please try again tomorrow."
+    }), 429
 
 
 def wants_step_by_step(text: str) -> bool:
@@ -346,6 +411,10 @@ def chat():
     if should_reject_for_subject(user_message, subject):
         return jsonify({"reply": f"I only answer {subject}-related questions on this page. Please ask a {subject} question."})
 
+    allowed, _ = consume_daily_usage(get_usage_user_key())
+    if not allowed:
+        return daily_limit_reached_response()
+
     session = image_sessions.get(client_id)
     history = get_chat_history(client_id, subject)
     if subject == "math" and session:
@@ -451,6 +520,9 @@ def upload_image():
             return jsonify({"reply": "No image uploaded."})
         if not prompt:
             return jsonify({"reply": "No image uploaded. You can also type a math problem and include 'step by step'."})
+        allowed, _ = consume_daily_usage(get_usage_user_key())
+        if not allowed:
+            return daily_limit_reached_response()
         try:
             payload = get_math_plan(prompt)
             if not payload.get("is_math"):
@@ -485,6 +557,10 @@ def upload_image():
         prompt_text = prompt or ""
         image_data_url = f"data:{mime_type};base64,{base64_image}"
         session = image_sessions.get(client_id)
+
+        allowed, _ = consume_daily_usage(get_usage_user_key())
+        if not allowed:
+            return daily_limit_reached_response()
 
         if subject != "math":
             subject_prompt = prompt_text or f"Answer the {subject} homework question shown in this image."
@@ -596,6 +672,12 @@ def create_session():
     session["user_email"] = verified_user["email"]
     session["user_uid"] = verified_user["uid"]
     return jsonify({"ok": True})
+
+
+@app.route("/usage-status", methods=["GET"])
+@login_required(api=True)
+def usage_status():
+    return jsonify(get_daily_usage_status(get_usage_user_key()))
 
 
 @app.route("/auth/logout", methods=["POST"])

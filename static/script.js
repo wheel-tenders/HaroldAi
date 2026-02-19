@@ -1,4 +1,5 @@
 let isSending = false;
+let usageCounterEl = null;
 
 function formatMathSymbols(text) {
     if (!text) return text;
@@ -111,9 +112,10 @@ function send() {
             removeMessage(thinkingBubble);
             appendTextMessage(chatbox, "ai", formatMathSymbols(`Harold: ${data.reply}`), { animate: true });
         })
-        .catch(() => {
+        .catch((err) => {
             removeMessage(thinkingBubble);
-            appendTextMessage(chatbox, "ai", "Harold: Something went wrong.");
+            const errorMessage = (err && err.message) ? err.message : "Something went wrong.";
+            appendTextMessage(chatbox, "ai", formatMathSymbols(`Harold: ${errorMessage}`));
         })
         .finally(() => {
             isSending = false;
@@ -123,6 +125,7 @@ function send() {
             if (voiceBtn) {
                 voiceBtn.disabled = false;
             }
+            refreshUsageCounter();
             input.focus();
         });
 
@@ -205,6 +208,47 @@ function sendImage(file, prompt) {
     }).then(handleJsonResponse);
 }
 
+function ensureUsageCounterElement() {
+    if (usageCounterEl) return usageCounterEl;
+
+    const header = document.querySelector(".chatbox-header");
+    if (!header) return null;
+
+    usageCounterEl = document.getElementById("usageCounter");
+    if (!usageCounterEl) {
+        usageCounterEl = document.createElement("span");
+        usageCounterEl.id = "usageCounter";
+        usageCounterEl.style.marginLeft = "10px";
+        usageCounterEl.style.opacity = "0.9";
+        header.appendChild(usageCounterEl);
+    }
+
+    return usageCounterEl;
+}
+
+async function refreshUsageCounter() {
+    const counterEl = ensureUsageCounterElement();
+    if (!counterEl) return;
+
+    try {
+        const res = await fetch("/usage-status", { method: "GET" });
+        if (res.status === 401) return;
+        if (!res.ok) throw new Error("Failed to load usage status");
+
+        const data = await res.json();
+        if (data.unlimited || Number(data.limit) <= 0) {
+            counterEl.textContent = "| Chats left today: Unlimited";
+            return;
+        }
+
+        const remaining = Math.max(Number(data.remaining || 0), 0);
+        const limit = Math.max(Number(data.limit || 0), 0);
+        counterEl.textContent = `| Chats left today: ${remaining}/${limit}`;
+    } catch (err) {
+        // Keep UI stable even if status fetch fails.
+    }
+}
+
 async function handleJsonResponse(res) {
     if (res.status === 401) {
         let payload = {};
@@ -218,7 +262,13 @@ async function handleJsonResponse(res) {
     }
 
     if (!res.ok) {
-        throw new Error(`Request failed with status ${res.status}`);
+        let payload = {};
+        try {
+            payload = await res.json();
+        } catch (err) {
+            payload = {};
+        }
+        throw new Error(payload.reply || payload.error || `Request failed with status ${res.status}`);
     }
     return res.json();
 }
